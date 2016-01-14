@@ -13,7 +13,6 @@ import (
 	"github.com/docker/machine/commands/mcndirs"
 	"github.com/docker/machine/libmachine"
 	"github.com/docker/machine/libmachine/auth"
-	"github.com/docker/machine/libmachine/cert"
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/drivers/rpc"
 	"github.com/docker/machine/libmachine/engine"
@@ -38,6 +37,15 @@ type machineConfig struct {
 	DriverOptions  map[string]interface{} `yaml:"driveroptions"`
 	EngineOptions  engine.Options         `yaml:"engineoptions"`
 	SwarmOptions   swarm.Options          `yaml:"swarmoptions"`
+}
+
+type PathInfo struct {
+	CaCertPath       string
+	CaPrivateKeyPath string
+	ClientCertPath   string
+	ClientKeyPath    string
+	ServerCertPath   string
+	ServerKeyPath    string
 }
 
 var (
@@ -104,12 +112,7 @@ func cmdApply(c CommandLine, api libmachine.API) error {
 			return fmt.Errorf("Error attempting to marshal bare driver data: %s", err)
 		}
 
-		driver, err := api.NewPluginDriver(driverName, bareDriverData)
-		if err != nil {
-			return fmt.Errorf("Error loading driver %s : %s", driverName, err)
-		}
-
-		h, err := api.NewHost(driver)
+		h, err := api.NewHost(driverName, bareDriverData)
 		if err != nil {
 			return fmt.Errorf("Error getting new host: %s", err)
 		}
@@ -161,14 +164,10 @@ func cmdApply(c CommandLine, api libmachine.API) error {
 				log.Infof("Machine %s is in state %s. Skipping..", h.Name, mncState.String())
 				continue
 			}
-			err = startMachine(driver, node, h, api)
-			if err != nil {
-				log.Info("Error while starting machine")
-				return err
-			}
+			//Start The machine.
 		} else {
 			// Create the machine
-			if err = createMachine(driver, node, h, api); err != nil {
+			if err = createMachine(node, h, api); err != nil {
 				log.Info("Error while machine creation: %s", err)
 				return err
 			}
@@ -215,7 +214,7 @@ func getDriverOptions(mc machineConfig, mcnflags []mcnflag.Flag) drivers.DriverO
 
 // Returns the cert paths
 // from machineConfig or default
-func getCertPathInfoFromConfig(mc machineConfig) cert.PathInfo {
+func getCertPathInfoFromConfig(mc machineConfig) PathInfo {
 	caCertPath := mc.CaCertPath
 	caKeyPath := mc.CaKeyPath
 	clientCertPath := mc.ClientCertPath
@@ -237,7 +236,7 @@ func getCertPathInfoFromConfig(mc machineConfig) cert.PathInfo {
 		clientKeyPath = filepath.Join(mcndirs.GetMachineCertDir(), "key.pem")
 	}
 
-	return cert.PathInfo{
+	return PathInfo{
 		CaCertPath:       caCertPath,
 		CaPrivateKeyPath: caKeyPath,
 		ClientCertPath:   clientCertPath,
@@ -279,8 +278,8 @@ func yaml2cmd(yamlTag string) string {
 	return strings.Replace(yamlTag, "_", "-", 5)
 }
 
-func createMachine(driver drivers.Driver, node machineConfig, h *host.Host, api libmachine.API) error {
-	mcnFlags := driver.GetCreateFlags()
+func createMachine(node machineConfig, h *host.Host, api libmachine.API) error {
+	mcnFlags := h.Driver.GetCreateFlags()
 	driverOpts := getDriverOptions(node, mcnFlags)
 
 	h.HostOptions.AuthOptions.SkipCertGeneration = false
@@ -291,27 +290,6 @@ func createMachine(driver drivers.Driver, node machineConfig, h *host.Host, api 
 
 	if err := api.Create(h); err != nil {
 		return fmt.Errorf("Error creating machine: %s", err)
-	}
-
-	if err := api.Save(h); err != nil {
-		return fmt.Errorf("Error attempting to save store: %s", err)
-	}
-
-	return nil
-}
-
-func startMachine(driver drivers.Driver, node machineConfig, h *host.Host, api libmachine.API) error {
-	mcnFlags := driver.GetCreateFlags()
-	driverOpts := getDriverOptions(node, mcnFlags)
-
-	h.HostOptions.AuthOptions.SkipCertGeneration = true
-
-	if err := h.Driver.SetConfigFromFlags(driverOpts); err != nil {
-		return fmt.Errorf("Error setting machine configuration from flags provided: %s", err)
-	}
-
-	if err := api.Start(h); err != nil {
-		return fmt.Errorf("Error while starting machine: %s", err)
 	}
 
 	if err := api.Save(h); err != nil {

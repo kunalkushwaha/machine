@@ -218,7 +218,7 @@ var Commands = []cli.Command{
 		Flags:  sharedApplyFlags,
 		Name:   "apply",
 		Usage:  fmt.Sprintf("Create/Modify a machine.\n\nRun '%s apply --config file' ", os.Args[0]),
-		Action: fatalOnError(cmdApply),
+		Action: runCommand(cmdApply),
 	},
 	{
 		Name:        "env",
