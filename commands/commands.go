@@ -387,6 +387,47 @@ var Commands = []cli.Command{
 		Usage:  "Show the Docker Machine version or a machine docker version",
 		Action: runCommand(cmdVersion),
 	},
+	{
+		Name:  "service",
+		Usage: "manage services",
+		Subcommands: []cli.Command{
+			{
+				Name:   "ls",
+				Usage:  "List the running services",
+				Action: runCommand(cmdServiceLs),
+			},
+			{
+				Name:   "start",
+				Usage:  "Start services",
+				Action: runCommand(cmdServiceStart),
+			},
+			{
+				Name:   "create",
+				Usage:  "Creates services",
+				Action: runCommand(cmdServiceCreate),
+			},
+			{
+				Name:   "up",
+				Usage:  "Create and Start services",
+				Action: runCommand(cmdServiceUp),
+			},
+			{
+				Name:   "stop",
+				Usage:  "Stop services",
+				Action: runCommand(cmdServiceStop),
+			},
+			{
+				Name:   "rm",
+				Usage:  "Remove serivce",
+				Action: runCommand(cmdServiceRemove),
+			},
+			{
+				Name:   "scale",
+				Usage:  "Scales the service",
+				Action: runCommand(cmdServiceScale),
+			},
+		},
+	},
 }
 
 func printIP(h *host.Host) func() error {

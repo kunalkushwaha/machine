@@ -136,11 +136,11 @@ func cmdLs(c CommandLine, api libmachine.API) error {
 
 	swarmMasters := make(map[string]string)
 	swarmInfo := make(map[string]string)
-
 	for _, host := range hostList {
 		if host.HostOptions != nil {
 			swarmOptions := host.HostOptions.SwarmOptions
 			if swarmOptions.Master {
+				log.Infof("swarmMaster Discovery: %v  %s", swarmOptions.Discovery, host.Name)
 				swarmMasters[swarmOptions.Discovery] = host.Name
 			}
 

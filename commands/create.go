@@ -192,7 +192,7 @@ func cmdCreateInner(c CommandLine, api libmachine.API) error {
 			ArbitraryFlags: c.StringSlice("swarm-opt"),
 		},
 	}
-
+	log.Infof("Swarm Discovery: %s ", h.HostOptions.SwarmOptions.Discovery)
 	exists, err := api.Exists(h.Name)
 	if err != nil {
 		return fmt.Errorf("Error checking if host exists: %s", err)
