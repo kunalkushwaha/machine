@@ -175,6 +175,43 @@ func runCommand(command func(commandLine CommandLine, api libmachine.API) error)
 	}
 }
 
+func runCommandWithCLIContext(command func(context *cli.Context, api libmachine.API) error) func(context *cli.Context) {
+	return func(context *cli.Context) {
+		api := libmachine.NewClient(mcndirs.GetBaseDir(), mcndirs.GetMachineCertDir())
+		defer api.Close()
+
+		if context.GlobalBool("native-ssh") {
+			api.SSHClientType = ssh.Native
+		}
+		api.GithubAPIToken = context.GlobalString("github-api-token")
+		api.Filestore.Path = context.GlobalString("storage-path")
+
+		// TODO (nathanleclaire): These should ultimately be accessed
+		// through the libmachine client by the rest of the code and
+		// not through their respective modules.  For now, however,
+		// they are also being set the way that they originally were
+		// set to preserve backwards compatibility.
+		mcndirs.BaseDir = api.Filestore.Path
+		mcnutils.GithubAPIToken = api.GithubAPIToken
+		ssh.SetDefaultClient(api.SSHClientType)
+
+		if err := command(context, api); err != nil {
+			log.Error(err)
+
+			if crashErr, ok := err.(crashreport.CrashError); ok {
+				crashReporter := crashreport.NewCrashReporter(mcndirs.GetBaseDir(), context.GlobalString("bugsnag-api-token"))
+				crashReporter.Send(crashErr)
+			}
+
+			if _, ok := err.(mcnerror.ErrDuringPreCreate); ok {
+				osExit(3)
+			} else {
+				osExit(1)
+			}
+		}
+	}
+}
+
 func confirmInput(msg string) (bool, error) {
 	fmt.Printf("%s (y/n): ", msg)
 
@@ -217,7 +254,7 @@ var Commands = []cli.Command{
 	{
 		Flags:  sharedApplyFlags,
 		Name:   "apply",
-		Usage:  fmt.Sprintf("Create/Modify a machine.\n\nRun '%s apply --config file' ", os.Args[0]),
+		Usage:  "Create/Modify a machine.\n\nRun docker-machine pply --config file' ",
 		Action: runCommand(cmdApply),
 	},
 	{
@@ -390,41 +427,170 @@ var Commands = []cli.Command{
 	{
 		Name:  "service",
 		Usage: "manage services",
+		Flags: sharedServiceFlags,
 		Subcommands: []cli.Command{
 			{
 				Name:   "ls",
 				Usage:  "List the running services",
-				Action: runCommand(cmdServiceLs),
+				Action: runCommandWithCLIContext(cmdServiceLs),
+			},
+			{
+				Name:   "ps",
+				Usage:  "List the containers",
+				Action: runCommandWithCLIContext(cmdServicePs),
+				Flags: []cli.Flag{
+					cli.BoolFlag{
+						Name:  "q",
+						Usage: "Only display IDs",
+					},
+				},
+			},
+			{
+				Name:   "build",
+				Usage:  "Build or rebuild services.",
+				Action: runCommandWithCLIContext(cmdServiceBuild),
+				Flags: []cli.Flag{
+					cli.BoolFlag{
+						Name:  "no-cache",
+						Usage: "Do not use cache when building the image",
+					},
+				},
+			},
+			{
+				Name:   "port",
+				Usage:  "Print the public port for a port binding",
+				Action: runCommandWithCLIContext(cmdServicePort),
+				Flags: []cli.Flag{
+					cli.StringFlag{
+						Name:  "protocol",
+						Usage: "tcp or udp ",
+						Value: "tcp",
+					},
+					cli.IntFlag{
+						Name:  "index",
+						Usage: "index of the container if there are multiple instances of a service",
+						Value: 1,
+					},
+				},
 			},
 			{
 				Name:   "start",
 				Usage:  "Start services",
-				Action: runCommand(cmdServiceStart),
+				Action: runCommandWithCLIContext(cmdServiceStart),
+				Flags: []cli.Flag{
+					cli.BoolTFlag{
+						Name:  "d",
+						Usage: "Do not block and log",
+					},
+				},
 			},
 			{
+
 				Name:   "create",
 				Usage:  "Creates services",
-				Action: runCommand(cmdServiceCreate),
+				Action: runCommandWithCLIContext(cmdServiceCreate),
 			},
 			{
-				Name:   "up",
-				Usage:  "Create and Start services",
-				Action: runCommand(cmdServiceUp),
+				Name: "up",
+				Flags: []cli.Flag{
+					cli.BoolFlag{
+						Name:  "d",
+						Usage: "Do not block and log",
+					},
+					cli.BoolFlag{
+						Name:  "no-build",
+						Usage: "Don't build an image, even if it's missing.",
+					},
+					cli.BoolFlag{
+						Name:  "no-recreate",
+						Usage: "If containers already exist, don't recreate them. Incompatible with --force-recreate.",
+					},
+					cli.BoolFlag{
+						Name:  "force-recreate",
+						Usage: "Recreate containers even if their configuration and image haven't changed. Incompatible with --no-recreate.",
+					},
+				},
+				Usage:  "Bring all services up",
+				Action: runCommandWithCLIContext(cmdServiceUp),
 			},
 			{
-				Name:   "stop",
-				Usage:  "Stop services",
-				Action: runCommand(cmdServiceStop),
+				Name:   "pull",
+				Usage:  "Pulls images for services",
+				Action: runCommandWithCLIContext(cmdServicePull),
+			},
+			{
+				Name:   "logs",
+				Usage:  "Get service logs",
+				Action: runCommandWithCLIContext(cmdServiceLog),
+				Flags: []cli.Flag{
+					cli.IntFlag{
+						Name:  "lines",
+						Usage: "numver of lines to tail",
+						Value: 100,
+					},
+				},
+			},
+			{
+				Name:      "stop",
+				ShortName: "down",
+				Usage:     "Stop services",
+				Action:    runCommandWithCLIContext(cmdServiceStop),
+				Flags: []cli.Flag{
+					cli.IntFlag{
+					Name:  "timeout, t",
+					Usage: "Specify a shutdown timeout in seconds.",
+					Value: 10,
+					},
+				},
 			},
 			{
 				Name:   "rm",
-				Usage:  "Remove serivce",
-				Action: runCommand(cmdServiceRemove),
+				Usage:  "Delete serivces",
+				Action: runCommandWithCLIContext(cmdServiceRemove),
+				Flags: []cli.Flag{
+					cli.BoolFlag{
+						Name:  "force,f",
+						Usage: "Allow deletion of all services",
+					},
+					cli.BoolFlag{
+						Name:  "v",
+						Usage: "Remove volumes associated with containers",
+					},
+				},
+			},
+			{
+				Name:   "kill",
+				Usage:  "Force stop service containers",
+				Action: runCommandWithCLIContext(cmdServiceKill),
+				Flags: []cli.Flag{
+					cli.StringFlag{
+						Name:  "signal,s",
+						Usage: "SIGNAL to send to the container",
+						Value: "SIGKILL",
+					},
+				},
 			},
 			{
 				Name:   "scale",
 				Usage:  "Scales the service",
-				Action: runCommand(cmdServiceScale),
+				Action: runCommandWithCLIContext(cmdServiceScale),
+				Flags: []cli.Flag{
+					cli.IntFlag{
+						Name:  "timeout,t",
+						Usage: "Specify a shutdown timeout in seconds.",
+						Value: 10,
+					},
+				},
+			},
+			{
+				Name:   "pause",
+				Usage:  "Pause services.",
+				Action: runCommandWithCLIContext(cmdServicePause),
+			},
+			{
+				Name:   "unpause",
+				Usage:  "Unpause services.",
+				Action: runCommandWithCLIContext(cmdServiceUnpause),
 			},
 		},
 	},
